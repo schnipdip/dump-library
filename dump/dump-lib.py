@@ -127,7 +127,7 @@ class dump:
                     print('connected_usb: ', connected_usb, 'usb_device: ', usb_device, '\nusb_device_vendorID: ', usb_device_vendorID,
                         '\nusb_device_productID: ', usb_device_productID, '\ndevice_list[usb_device]: ', device_list[usb_device])
                 else:
-                    raise("Invalid argument value for dump_start(True|False).")
+                    raise Exception("Invalid argument value for dump_start(True|False).")
 
             return device_list
 
