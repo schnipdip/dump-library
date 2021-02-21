@@ -79,8 +79,11 @@ class dump:
                 else:
                     return(input_mntpnt_location)
 
-
     def dump_start(self, *args):
+        '''
+            args: [0]debug(True|False), [1]auto_unmount(True|False)
+        '''
+        
         import configparser
         import subprocess
         import usb
@@ -89,12 +92,17 @@ class dump:
         import sys
         import re
 
-        #Define default value for Debug
-        for item in args:
-            if item.lower() == 'true':
-                debug = True
-            else:
-                debug = False
+        # Define default value for Debug
+        if args[0].lower() == 'true':
+            debug = True
+        else:
+            debug = False
+
+        # Define value to auto unmount
+        if args[1].lower() == 'true':
+            unmount = True
+        else:
+            unmount = False
 
         def find_backup(self):
 
@@ -124,6 +132,7 @@ class dump:
             return device_list
 
         def verify_usb(self, usb_device_list, backup_dev_name, input_dev_name):
+            
             backup_device = backup_device.lower()
             input_device = input_device.lower()
             
@@ -131,13 +140,15 @@ class dump:
             for device, value in usb_device_list.items():
                 print(usb_device_list[device][1])
                 if backup_device in device.lower():
-                    print('found the backup device')
+                    if debug:
+                        print('found the backup device')
                     backup_usb_device_vendor = usb_device_list[device][0]
                     backup_usb_device_product = usb_device_list[device][1]
                     #usb_list[device] = backup_usb_device_product
                     
                 if input_device in device.lower():
-                    print('found the input device')
+                    if debug:
+                        print('found the input device')
                     input_usb_device_vendor = usb_device_list[device][0]
                     input_usb_device_product = usb_device_list[device][1]
 
@@ -148,13 +159,106 @@ class dump:
     
             return backup_usb_device_vendor, input_usb_device_vendor, backup_usb_device_product, input_usb_device_product
 
-    # make udev rules < not configurable >
+        def make_udev_rules(self, backup_vendorID, input_vendorID, backup_productID, input_productID, dumper_loc):
+           
+            udev_file_source = open('/etc/udev/rules.d/10.autobackup_source.rules', 'w+')
+            udev_file_backup = open('/etc/udev/rules.d/11.autobackup_backup.rules', 'w+')
+            
+            #strip first two characters of hex
+            backup_vendorID = backup_vendorID.strip('0x')
+            backup_productID = backup_productID.strip('0x')
+            input_vendorID = input_vendorID.strip('0x')
+            input_productID = input_productID.strip('0x')
+            
+            write_str_source = """ACTION="add", ATTRS{idVendor}=""" + '''"''' + input_vendorID + '''", ATTRS{idProduct}="''' + input_productID + '''",''' + """ RUN+="/usr/bin/sudo /usr/bin/python3 """ + dumper_loc + '''"'''
 
-    # mount backup device < not configurable >
+            udev_file_source.write(str(write_str_source))
 
-    # perform backup < not configurable >
+            udev_file_source.close()
 
-    # unmount backup < not configurable >
+            write_str_backup = """ACTION="add", ATTRS{idVendor}=""" + '''"''' + backup_vendorID + '''", ATTRS{idProduct}="''' + backup_productID + '''",''' + """ RUN+="/usr/bin/sudo /usr/bin/python3 """ + dumper_loc + '''"'''
+
+            udev_file_backup.write(str(write_str_backup))
+
+            udev_file_backup.close()
+
+            #reload udev rules
+            subprocess.run('udevadm control --reload', shell=True)
+
+            if debug:
+                print('udev_file_source: ', udev_file_source, '\nudev_file_backup: ', udev_file_backup,
+                    '\nbackup_vendorID: ', backup_vendorID, '\nbackup_productID: ', backup_productID,
+                    '\ninput_vendor_id: ', input_vendorID, '\ninput_productID: ', input_productID,
+                    '\nudev source rule: ', write_str_source, '\nudev backup rule: ', udev_file_backup)
+
+        def mount_usb(self, dbl, dil, mbl, mil, backup_name, input_name):
+            
+            check_path_backup = (mbl + 'backup')
+            check_path_input = (mil + 'source')
+
+            if os.path.exists(check_path_backup):
+                if debug:
+                    print('check_path_backup: path already exists.')
+                pass
+            else:
+                #make dir for mount point
+                makedir_backup = ('mkdir ' + mbl + 'backup')
+                os.system(makedir_backup)
+
+            #make mount point for backup usb
+            backup_command = ('sudo mount -t auto ' + dbl + ' ' + mbl + 'backup')
+            
+            os.system(backup_command)
+            
+            if os.path.exists(check_path_input):
+                if debug:
+                    print('check_path_input: path already exists.')
+                pass
+            else:
+                #make dir for mount point
+                makedir_input = ('mkdir ' + mil + 'source')
+                os.system(makedir_input)
+
+            
+            #make mount point for input usb
+            input_command = ('sudo mount -t auto ' + dil + ' ' + mil + 'source')
+
+            os.system(input_command)
+
+            if debug:
+                print('Make Backup Mount Point Directory: ', makedir_backup,
+                    '\nMake Input Mount Point Directory: ', makedir_input)
+
+        # TODO: change the variables to the global configuration variables
+        def run_autobackup(self, dev_backup_loc, dev_input_loc, mnt_backup_loc, mnt_input_loc, backup_name, input_name):
+
+            INPUT_SOURCE = (mnt_input_loc + 'source')
+            INPUT_DEVICE = (dev_input_loc)
+            BACKUP_SOURCE = (mnt_backup_loc + 'backup')
+            BACKUP_DEVICE = (dev_backup_loc)
+            
+            command = ('''rsync -a {0} {1} ''').format(INPUT_SOURCE, BACKUP_SOURCE)
+
+            result = subprocess.run(command, shell=True)
+        
+        if unmount:
+            def unmount_drives():
+
+                print('unmounting drives...')
+                command = ('''umount /mnt/*''')
+
+                subprocess.run(command, shell=True)
+
+                print('Safe to remove drives')
+        
+    def umount(self):
+
+        print('unmounting drives...')
+        command = ('''umount /mnt/*''')
+
+        subprocess.run(command, shell=True)
+
+        print('Safe to remove drives')
 
 
 
